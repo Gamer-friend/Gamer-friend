@@ -5,8 +5,7 @@ on:
     branches: ["main"]
 
 jobs:
-  use_install_qt:
-    name: Build QT
+  Deployment:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
