@@ -1,6 +1,8 @@
 name: BSD SUCKSSS ASS!!
 
-on: [push]
+on:
+  push:
+    branches: ["main"]
 
 jobs:
   use_install_qt:
@@ -23,15 +25,6 @@ jobs:
             ANDROID_ABI: x86
 
     runs-on: ${{ matrix.os }}
-
-    env:
-      SOURCE_DIR:  ${{github.workspace}}/.cache/source
-      TOOSL_DIR:   ${{github.workspace}}/.cache/tools
-      INSTALL_DIR: ${{github.workspace}}/.cache/install
-      RabbitIm_VERSION: v0.1.1
-      VCPKGGITCOMMITID: 973a7d517c09c8cfb7e6a548fcc260ca34ba7b60
-      qt_modules: qtwebengine
-
     steps:
     - uses: actions/checkout@v4
       with:
