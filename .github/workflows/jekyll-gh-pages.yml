@@ -1,4 +1,4 @@
-name: BSD SUCKSSS ASS!!
+name: RabbitIm Android CI
 
 on:
   push:
@@ -6,7 +6,25 @@ on:
 
 jobs:
   Deployment:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        qt_version: [5.15.2]
+        qt_arch: [android_armv7]
+        VCPKG_TARGET_TRIPLET: [arm-android]
+        BUILD_TYPE: [Release]
+        ANDROID_ABI: [armeabi-v7a]
+        ANDROID_PLATFORM: [android-21]
     runs-on: ${{ matrix.os }}
+    env:
+      SOURCE_DIR: ${{ github.workspace }}/source
+      TOOLS_DIR: ${{ github.workspace }}/tools
+      INSTALL_DIR: ${{ github.workspace }}/install
+      Qt5_Dir: ${{ github.workspace }}/tools/qt/${{ matrix.qt_version }}
+      VCPKGGITCOMMITID: "commit-id-goes-here"
+      qt_modules: "qtbase qttools qtmultimedia qtwebengine qtdeclarative"
+      RabbitIm_VERSION: "v1.0.0"
+
     steps:
     - uses: actions/checkout@v4
       with:
@@ -14,277 +32,168 @@ jobs:
 
     - uses: snickerbockers/submodules-init@v4
 
-    - name: make directory
+    - name: Create directories
       run: |
         cmake -E make_directory ${{env.SOURCE_DIR}}
-        cmake -E make_directory ${{env.TOOSL_DIR}}
+        cmake -E make_directory ${{env.TOOLS_DIR}}
         cmake -E make_directory ${{env.INSTALL_DIR}}
 
     - name: Cache Qt
       id: cache-qt
-      uses: actions/cache@v4  # not v2!
+      uses: actions/cache@v4
       with:
-        path: ${{env.TOOSL_DIR}}/qt
-        key: android_${{matrix.os}}-qt${{matrix.qt_version}}-${{matrix.VCPKG_TARGET_TRIPLET}}-${{matrix.BUILD_TYPE}}-2021-11-03
-        
+        path: ${{env.TOOLS_DIR}}/qt
+        key: android_${{matrix.os}}-qt${{matrix.qt_version}}-${{matrix.VCPKG_TARGET_TRIPLET}}-${{matrix.BUILD_TYPE}}
+
     - name: Install Qt
-      # You may pin to the exact commit or the version.
-      # uses: jurplel/install-qt-action@a962fb91949c8e846a3e4a944d50e7ef5cc3a28a
       uses: jurplel/install-qt-action@v4.1.1
       with:
-        # Directory to install Qt
-        dir: ${{env.TOOSL_DIR}}/qt # optional
-        # Version of Qt to install
-        version: ${{matrix.qt_version}} # optional, default is 5.15.2
-        # Host platform
-        #host: linux # optional
-        # Target platform for build
-        target: android # optional, default is desktop
-        # Architecture for Windows/Android
-        arch: ${{matrix.qt_arch}} # optional
-        # Whether or not to install Qt dependencies on Linux
-        #install-deps: true # optional, default is true
-        # Additional Qt modules to install
-        modules: ${{env.qt_modules}} # optional
-        # Force a Qt mirror in case the default is not working
-        #mirror: # optional
-        # Whether or not to actually download Qt
-        cached: ${{ steps.cache-qt.outputs.cache-hit }} # optional, default is false
-        # Whether or not to automatically run setup-python to find a valid python version.
-        #setup-python: false # optional, default is true
-        # Qt tools to download--specify comma-separated argument lists which are themselves separated by spaces: <tool_name>,<tool_version>,<tool_arch>
-        #tools: # optional
-        # Whether or not to actually install Qt or just the tools from the tools argument
-        #tools-only: false # optional, default is false
-        # Version of aqtinstall to use in case of issues
-        #aqtversion: # optional, default is ==0.10.0
-        # Version of py7zr to use in case of issues
-        #py7zrversion: # optional, default is ==0.11.0
-        # Any extra arguments to append to the back
-        #extra: # optional
+        dir: ${{env.TOOLS_DIR}}/qt
+        version: ${{matrix.qt_version}}
+        target: android
+        arch: ${{matrix.qt_arch}}
+        modules: ${{env.qt_modules}}
+        cached: ${{ steps.cache-qt.outputs.cache-hit }}
 
-    - name: apt helper action
+    - name: Install build tools
       uses: ryankurte/action-apt@v0.2.0
       with:
-        # architectures to pass to dpkg --add-architecture
-        #architectures: # optional
-        # apt packages to install
         packages: yasm nasm
 
     - name: run-vcpkg
       uses: lukka/run-vcpkg@v11.5
       with:
-        # Indicates whether to only setup vcpkg (i.e. installing it and setting the environment variables VCPKG_ROOT, RUNVCPK_VCPKG_ROOT), without installing any port.
-        #setupOnly: # optional
-        #vcpkgGitURL: https://github.com/KangLin/vcpkg.git
         vcpkgGitCommitId: ${{env.VCPKGGITCOMMITID}}
         vcpkgDirectory: ${{ runner.workspace }}/vcpkg/
-        # Since the cache must be invalidated when content of the vcpkg.json file changes, let's
-        # compute its hash and append this to the computed cache's key.
         appendedCacheKey: android_${{matrix.os}}-qt${{matrix.qt_version}}-${{matrix.VCPKG_TARGET_TRIPLET}}-${{matrix.BUILD_TYPE}}-${{env.VCPKGGITCOMMITID}}
         additionalCachedPaths: $VCPKG_ROOT/installed
         vcpkgTriplet: '${{ matrix.VCPKG_TARGET_TRIPLET }}'
-        vcpkgArguments: 'openssl ffmpeg zlib libpng libjpeg-turbo opus libyuv' # opencv'
+        vcpkgArguments: 'openssl ffmpeg zlib libpng libjpeg-turbo opus libyuv'
 
-    - name: Cache installed
+    - name: Cache installed packages
       uses: actions/cache@v4
       id: cache-installed
       with:
-        path: |
-          ${{env.INSTALL_DIR}}
-        key: cache-installed-android_${{matrix.os}}-qt${{matrix.qt_version}}-${{matrix.VCPKG_TARGET_TRIPLET}}-${{matrix.BUILD_TYPE}}
+        path: ${{env.INSTALL_DIR}}
+        key: installed-${{matrix.os}}-${{matrix.qt_version}}-${{matrix.BUILD_TYPE}}
 
-    - name: build log4qt
+    - name: Build Log4Qt
       working-directory: ${{env.SOURCE_DIR}}
       env:
         QT_ROOT: ${{env.Qt5_Dir}}
       run: |
         if [ ! -d ${{env.INSTALL_DIR}}/lib/cmake/Log4Qt ]; then
-            git clone -b v1.5.1 "https://github.com/MEONMedical/Log4Qt.git"
-            cd Log4Qt
-            cmake -E make_directory build
-            cd build
-            cmake .. -DCMAKE_BUILD_TYPE=${{matrix.BUILD_TYPE}} \
-                -DQt5_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5 \
-                -DQt5Core_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Core \
-                -DQt5Network_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Network \
-                -DQt5Concurrent_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Concurrent \
-                -DQt5Test_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Test \
-                -DCMAKE_INSTALL_PREFIX=${{env.INSTALL_DIR}} \
-                -DCMAKE_PREFIX_PATH=${{env.QT_ROOT}} \
-                -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake \
-                -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-                -DANDROID_ABI=${{matrix.ANDROID_ABI}} \
-                -DANDROID_PLATFORM=${{matrix.ANDROID_PLATFORM}}
-            cmake --build . --config ${{matrix.BUILD_TYPE}}
-            cmake --build . --config ${{matrix.BUILD_TYPE}} --target install
+          git clone -b v1.5.1 https://github.com/MEONMedical/Log4Qt.git
+          cd Log4Qt && mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.BUILD_TYPE}} \
+            -DQt5_DIR=${QT_ROOT}/lib/cmake/Qt5 \
+            -DCMAKE_INSTALL_PREFIX=${{env.INSTALL_DIR}} \
+            -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{matrix.ANDROID_ABI}} \
+            -DANDROID_PLATFORM=${{matrix.ANDROID_PLATFORM}}
+          cmake --build . --config ${{matrix.BUILD_TYPE}} --target install
         fi
 
-    - name: git clone RabbitCommon
+    - name: Clone RabbitCommon
       working-directory: ${{env.SOURCE_DIR}}
       run: git clone https://github.com/KangLin/RabbitCommon.git
 
-    - name: build qxmpp
+    - name: Build qxmpp
       working-directory: ${{env.SOURCE_DIR}}
       env:
         QT_ROOT: ${{env.Qt5_Dir}}
       run: |
         if [ ! -d ${{env.INSTALL_DIR}}/lib/cmake/qxmpp ]; then
-            git clone -b v1.2.1 "https://github.com/qxmpp-project/qxmpp.git"
-            cd qxmpp
-            cmake -E make_directory build
-            cd build
-            cmake .. -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF \
-                -DCMAKE_BUILD_TYPE=${{matrix.BUILD_TYPE}} \
-                -DQt5_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5 \
-                -DQt5Core_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Core \
-                -DQt5Gui_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Gui \
-                -DQt5Test_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Test \
-                -DQt5Xml_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Xml \
-                -DQt5Network_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Network \
-                -DCMAKE_INSTALL_PREFIX=${{env.INSTALL_DIR}} \
-                -DCMAKE_PREFIX_PATH=${{env.QT_ROOT}} \
-                -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake \
-                -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-                -DANDROID_ABI=${{matrix.ANDROID_ABI}} \
-                -DANDROID_PLATFORM=${{matrix.ANDROID_PLATFORM}}
-            cmake --build . --config ${{matrix.BUILD_TYPE}}
-            cmake --build . --config ${{matrix.BUILD_TYPE}} --target install
+          git clone -b v1.2.1 https://github.com/qxmpp-project/qxmpp.git
+          cd qxmpp && mkdir build && cd build
+          cmake .. -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=${{matrix.BUILD_TYPE}} \
+            -DQt5_DIR=${QT_ROOT}/lib/cmake/Qt5 \
+            -DCMAKE_INSTALL_PREFIX=${{env.INSTALL_DIR}} \
+            -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{matrix.ANDROID_ABI}} \
+            -DANDROID_PLATFORM=${{matrix.ANDROID_PLATFORM}}
+          cmake --build . --config ${{matrix.BUILD_TYPE}} --target install
         fi
 
-    - name: build qzxing
+    - name: Build qzxing
       working-directory: ${{env.SOURCE_DIR}}
       env:
         QT_ROOT: ${{env.Qt5_Dir}}
       run: |
         if [ ! -d ${{env.INSTALL_DIR}}/lib/cmake/QZXing ]; then
-            git clone "https://github.com/KangLin/qzxing.git"
-            cd qzxing
-            cmake -E make_directory build
-            cd build
-            cmake .. -DBUILD_EXAMPLES=OFF -DQZXING_QML=OFF \
-                -DQZXING_ENABLE_ENCODER=ON \
-                -DCMAKE_BUILD_TYPE=${{matrix.BUILD_TYPE}} \
-                -DQt5_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5 \
-                -DQt5Core_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Core \
-                -DQt5Gui_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Gui \
-                -DQt5Network_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Network \
-                -DQt5Multimedia_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Multimedia \
-                -DCMAKE_INSTALL_PREFIX=${{env.INSTALL_DIR}} \
-                -DCMAKE_PREFIX_PATH=${{env.QT_ROOT}} \
-                -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake \
-                -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-                -DANDROID_ABI=${{matrix.ANDROID_ABI}} \
-                -DANDROID_PLATFORM=${{matrix.ANDROID_PLATFORM}}
-            cmake --build . --config ${{matrix.BUILD_TYPE}}
-            cmake --build . --config ${{matrix.BUILD_TYPE}} --target install
+          git clone https://github.com/KangLin/qzxing.git
+          cd qzxing && mkdir build && cd build
+          cmake .. -DQZXING_ENABLE_ENCODER=ON \
+            -DCMAKE_BUILD_TYPE=${{matrix.BUILD_TYPE}} \
+            -DQt5_DIR=${QT_ROOT}/lib/cmake/Qt5 \
+            -DCMAKE_INSTALL_PREFIX=${{env.INSTALL_DIR}} \
+            -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{matrix.ANDROID_ABI}} \
+            -DANDROID_PLATFORM=${{matrix.ANDROID_PLATFORM}}
+          cmake --build . --config ${{matrix.BUILD_TYPE}} --target install
         fi
 
-    - name: build RabbitIm
+    - name: Build RabbitIm
       env:
         RabbitCommon_DIR: ${{env.SOURCE_DIR}}/RabbitCommon
         QT_ROOT: ${{env.Qt5_Dir}}
         STOREPASS: ${{secrets.STOREPASS}}
       run: |
-        cmake -E make_directory ${{github.workspace}}/build
-        cd ${{github.workspace}}/build
+        mkdir -p ${{github.workspace}}/build && cd $_
         cmake ${{github.workspace}} \
-            -DCMARK_SHARED=OFF \
-            -DCMARK_TESTS=OFF \
-            -DCMARK_STATIC=ON \
-            -DBUILD_PLUGIN_APP=OFF \
-            -DLog4Qt_DIR=${{env.INSTALL_DIR}}/lib/cmake/Log4Qt \
-            -DQXmpp_DIR=${{env.INSTALL_DIR}}/lib/cmake/qxmpp \
-            -DQZXing_DIR=${{env.INSTALL_DIR}}/lib/cmake/QZXing \
-            -DCMAKE_BUILD_TYPE=${{matrix.BUILD_TYPE}} \
-            -DQT_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5 \
-            -DQt5_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5 \
-            -DQt5Core_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Core \
-            -DQt5Gui_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Gui \
-            -DQt5Widgets_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Widgets \
-            -DQt5Xml_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Xml \
-            -DQt5Sql_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Sql \
-            -DQt5Positioning_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Positioning \
-            -DQt5Network_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Network \
-            -DQt5Multimedia_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Multimedia \
-            -DQt5LinguistTools_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5LinguistTools \
-            -DQt5Qml_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Qml \
-            -DQt5Quick_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Quick \
-            -DQt5QuickWidgets_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5QuickWidgets \
-            -DQt5AndroidExtras_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5AndroidExtras \
-            -DQt5Concurrent_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Concurrent \
-            -DQt5Test_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5Test \
-            -DQt5WebEngineWidgets_DIR=${{env.QT_ROOT}}/lib/cmake/Qt5WebEngineWidgets \
-            -DCMAKE_INSTALL_PREFIX=${{env.INSTALL_DIR}} \
-            -DCMAKE_PREFIX_PATH=${{env.QT_ROOT}} \
-            -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake \
-            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=${{matrix.ANDROID_ABI}} \
-            -DANDROID_PLATFORM=${{matrix.ANDROID_PLATFORM}}
-        cmake --build . --config ${{ matrix.BUILD_TYPE }}
-        cmake --build . --config ${{ matrix.BUILD_TYPE }} --target install-runtime
-        cmake --build . --config ${{ matrix.BUILD_TYPE }} --target APK
+          -DCMAKE_BUILD_TYPE=${{matrix.BUILD_TYPE}} \
+          -DQT_DIR=${QT_ROOT}/lib/cmake/Qt5 \
+          -DLog4Qt_DIR=${{env.INSTALL_DIR}}/lib/cmake/Log4Qt \
+          -DQXmpp_DIR=${{env.INSTALL_DIR}}/lib/cmake/qxmpp \
+          -DQZXing_DIR=${{env.INSTALL_DIR}}/lib/cmake/QZXing \
+          -DCMAKE_INSTALL_PREFIX=${{env.INSTALL_DIR}} \
+          -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake \
+          -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI=${{matrix.ANDROID_ABI}} \
+          -DANDROID_PLATFORM=${{matrix.ANDROID_PLATFORM}}
+        cmake --build . --config ${{matrix.BUILD_TYPE}} --target install-runtime
+        cmake --build . --config ${{matrix.BUILD_TYPE}} --target APK
 
-    - name: Package
+    - name: Package APK
       if: ${{ matrix.BUILD_TYPE == 'Release' }}
       working-directory: ${{env.INSTALL_DIR}}
-      env:
-        QT_ROOT: ${{env.Qt5_Dir}}
-        RabbitCommon_DIR: ${{env.SOURCE_DIR}}/RabbitCommon
       run: |
-        APK_FILE=`find . -name "install-release-signed.apk"`
-        APK_NAME=RabbitIm_${{matrix.ANDROID_ABI}}_${RabbitIm_VERSION}.apk
-        mv -f ${APK_FILE} ${APK_NAME}
-        APK_FILE=${APK_NAME}
+        APK_FILE=$(find . -name "install-release-signed.apk")
+        APK_NAME=RabbitIm_${{matrix.ANDROID_ABI}}_${{env.RabbitIm_VERSION}}.apk
+        mv "$APK_FILE" "$APK_NAME"
         cp ${{github.workspace}}/Update/update_android.xml .
-        MD5=`md5sum ${APK_FILE} | awk '{print $1}'`
-        echo "MD5:${MD5}"
-        sed -i "s/<VERSION>.*</<VERSION>${RabbitIm_VERSION}</g" update_android.xml
-        sed -i "s/<INFO>.*</<INFO>Release RabbitIm ${RabbitIm_VERSION}</g" update_android.xml
-        sed -i "s/<TIME>.*</<TIME>`date`</g" update_android.xml
-        sed -i "s/<ARCHITECTURE>.*</<ARCHITECTURE>${{matrix.ANDROID_ABI}}</g" update_android.xml
-        sed -i "s/<MD5SUM>.*</<MD5SUM>${MD5}</g" update_android.xml
-        sed -i "s:<URL>.*<:<URL>https\://github.com/KangLin/RabbitIm/releases/download/${RabbitIm_VERSION}/${APK_NAME}<:g" update_android.xml
-        sed -i "s/<MIN_UPDATE_VERSION>.*</<MIN_UPDATE_VERSION>${RabbitIm_VERSION}</g" update_android.xml
+        MD5=$(md5sum "$APK_NAME" | awk '{print $1}')
+        sed -i "s/<VERSION>.*</<VERSION>${{env.RabbitIm_VERSION}}</" update_android.xml
+        sed -i "s/<INFO>.*</<INFO>Release RabbitIm ${{env.RabbitIm_VERSION}}</" update_android.xml
+        sed -i "s/<TIME>.*</<TIME>$(date)</" update_android.xml
+        sed -i "s/<ARCHITECTURE>.*</<ARCHITECTURE>${{matrix.ANDROID_ABI}}</" update_android.xml
+        sed -i "s/<MD5SUM>.*</<MD5SUM>$MD5</" update_android.xml
+        sed -i "s:<URL>.*<:<URL>https://github.com/KangLin/RabbitIm/releases/download/${{env.RabbitIm_VERSION}}/${APK_NAME}<:g"
 
-    - name: update 
+    - name: Upload APK
       if: ${{ matrix.BUILD_TYPE == 'Release' }}
       uses: actions/upload-artifact@v4
       with:
-        name: rabbitreim_android_${{matrix.ANDROID_ABI}}_${{env.RabbitIm_VERSION}}
-        path: |
-          ${{env.INSTALL_DIR}}/RabbitIm_${{matrix.ANDROID_ABI}}_${{env.RabbitIm_VERSION}}.apk
+        name: rabbitim_android_${{matrix.ANDROID_ABI}}_${{env.RabbitIm_VERSION}}
+        path: ${{env.INSTALL_DIR}}/RabbitIm_${{matrix.ANDROID_ABI}}_${{env.RabbitIm_VERSION}}.apk
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        path:
-          data
-    - name: Setup Node
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: "20"
-    - name: Setup Pages
-      id: pages
-      uses: actions/configure-pages@v5
-      with:
-          # Automatically inject pathPrefix in your Gatsby configuration file.
-          #
-          # You may remove this line if you want to manage the configuration yourself.
-        static_site_generator: gatsby
-    - name: Install dependencies
-      run: ${{ steps.detect-package-manager.outputs.manager }} ${{ steps.detect-package-manager.outputs.command }}
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Setup Pages
-      uses: actions/configure-pages@v5
-    - name: Build with Jekyll
+
+    - name: Build Jekyll site
       uses: actions/jekyll-build-pages@v1
       with:
         source: ./
         destination: ./_site
-    - name: Upload artifact
+
+    - name: Upload GitHub Pages artifact
       uses: actions/upload-pages-artifact@v3
+
     - name: Deploy to GitHub Pages
-      id: deployment
       uses: actions/deploy-pages@v4
