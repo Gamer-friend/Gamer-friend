@@ -45,22 +45,12 @@ jobs:
         path: ${{env.TOOLS_DIR}}/qt
         key: android_${{matrix.os}}-qt${{matrix.qt_version}}-${{matrix.VCPKG_TARGET_TRIPLET}}-${{matrix.BUILD_TYPE}}
         
-    - name: Verify Qt
+    - name: Install Qt
       uses: jurplel/install-qt-action@v4.1.1
       with:
         version: '6.7.3'
         modules: qtcharts qtconnectivity
         cache: true
-
-    - name: Install Qt
-      uses: jurplel/install-qt-action@v4.1.1
-      with:
-        dir: ${{env.TOOLS_DIR}}/qt
-        version: ${{matrix.qt_version}}
-        target: android
-        arch: ${{matrix.qt_arch}}
-        modules: ${{env.qt_modules}}
-        cached: ${{ steps.cache-qt.outputs.cache-hit }}
 
     - name: Install build tools
       uses: ryankurte/action-apt@v0.2.0
