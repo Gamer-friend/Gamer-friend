@@ -57,16 +57,6 @@ jobs:
       with:
         packages: yasm nasm
 
-    - name: run-vcpkg
-      uses: lukka/run-vcpkg@v11.5
-      with:
-        vcpkgGitCommitId: ${{env.VCPKGGITCOMMITID}}
-        vcpkgDirectory: ${{ runner.workspace }}/vcpkg/
-        appendedCacheKey: android_${{matrix.os}}-qt${{matrix.qt_version}}-${{matrix.VCPKG_TARGET_TRIPLET}}-${{matrix.BUILD_TYPE}}-${{env.VCPKGGITCOMMITID}}
-        additionalCachedPaths: $VCPKG_ROOT/installed
-        vcpkgTriplet: '${{ matrix.VCPKG_TARGET_TRIPLET }}'
-        vcpkgArguments: 'openssl ffmpeg zlib libpng libjpeg-turbo opus libyuv'
-
     - name: Cache installed packages
       uses: actions/cache@v4
       id: cache-installed
