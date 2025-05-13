@@ -1,0 +1,190 @@
+name: RabbitIm Android CI
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  Deployment:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        qt_version: [5.15.2]
+        qt_arch: [android_armv7]
+        VCPKG_TARGET_TRIPLET: [arm-android]
+        BUILD_TYPE: [Release]
+        ANDROID_ABI: [armeabi-v7a]
+        ANDROID_PLATFORM: [android-21]
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      SOURCE_DIR: ${{ github.workspace }}/source
+      TOOLS_DIR: ${{ github.workspace }}/tools
+      INSTALL_DIR: ${{ github.workspace }}/install
+      Qt5_Dir: ${{ github.workspace }}/tools/qt/${{ matrix.qt_version }}
+      VCPKGGITCOMMITID: "c456dd1e1fa88c301f1d0126dcdb1dce20d37bc9"
+      qt_modules: "qtbase qttools qtmultimedia qtwebengine qtdeclarative"
+      RabbitIm_VERSION: "v1.0.0"
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - uses: snickerbockers/submodules-init@v4
+
+    - name: Create directories
+      run: |
+        cmake -E make_directory ${{ env.SOURCE_DIR }}
+        cmake -E make_directory ${{ env.TOOLS_DIR }}
+        cmake -E make_directory ${{ env.INSTALL_DIR }}
+
+    - name: Cache Qt
+      id: cache-qt
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.TOOLS_DIR }}/qt
+        key: android_${{ matrix.os }}-qt${{ matrix.qt_version }}-${{ matrix.VCPKG_TARGET_TRIPLET }}-${{ matrix.BUILD_TYPE }}
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4.1.1
+      with:
+        version: ${{ matrix.qt_version }}
+        target: android
+        arch: ${{ matrix.qt_arch }}
+        modules: ${{ env.qt_modules }}
+        dir: ${{ env.TOOLS_DIR }}/qt
+        cached: ${{ steps.cache-qt.outputs.cache-hit }}
+
+    - name: Install dependencies
+      uses: ryankurte/action-apt@v0.2.0
+      with:
+        packages: yasm nasm ninja-build build-essential cmake unzip
+
+    - name: Setup VCPKG
+      uses: lukka/run-vcpkg@v11.5
+      with:
+        vcpkgGitCommitId: ${{ env.VCPKGGITCOMMITID }}
+        vcpkgDirectory: ${{ env.VCPKG_ROOT }}
+        appendedCacheKey: android_${{ matrix.os }}-qt${{ matrix.qt_version }}-${{ matrix.VCPKG_TARGET_TRIPLET }}-${{ matrix.BUILD_TYPE }}
+        additionalCachedPaths: ${{ env.VCPKG_ROOT }}/installed
+        vcpkgTriplet: ${{ matrix.VCPKG_TARGET_TRIPLET }}
+        vcpkgArguments: 'openssl ffmpeg zlib libpng libjpeg-turbo opus libyuv'
+
+    - name: Cache install output
+      uses: actions/cache@v4
+      id: cache-installed
+      with:
+        path: ${{ env.INSTALL_DIR }}
+        key: installed-${{ matrix.os }}-${{ matrix.qt_version }}-${{ matrix.BUILD_TYPE }}
+
+    - name: Clone RabbitCommon
+      working-directory: ${{ env.SOURCE_DIR }}
+      run: git clone https://github.com/KangLin/RabbitCommon.git
+
+    - name: Build qxmpp
+      working-directory: ${{ env.SOURCE_DIR }}
+      env:
+        QT_ROOT: ${{ env.Qt5_Dir }}
+      run: |
+        if [ ! -d ${{ env.INSTALL_DIR }}/lib/cmake/qxmpp ]; then
+          git clone -b v1.2.1 https://github.com/qxmpp-project/qxmpp.git
+          cd qxmpp && mkdir build && cd build
+          cmake .. -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=${{ matrix.BUILD_TYPE }} \
+            -DQt5_DIR=${QT_ROOT}/lib/cmake/Qt5 \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_DIR }} \
+            -DCMAKE_PREFIX_PATH=${QT_ROOT} \
+            -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{ matrix.ANDROID_ABI }} \
+            -DANDROID_PLATFORM=${{ matrix.ANDROID_PLATFORM }} \
+            -G "Ninja"
+          cmake --build . --target install
+        fi
+
+    - name: Build qzxing
+      working-directory: ${{ env.SOURCE_DIR }}
+      env:
+        QT_ROOT: ${{ env.Qt5_Dir }}
+      run: |
+        if [ ! -d ${{ env.INSTALL_DIR }}/lib/cmake/QZXing ]; then
+          git clone https://github.com/KangLin/qzxing.git
+          cd qzxing && mkdir build && cd build
+          cmake .. -DQZXING_ENABLE_ENCODER=ON \
+            -DCMAKE_BUILD_TYPE=${{ matrix.BUILD_TYPE }} \
+            -DQt5_DIR=${QT_ROOT}/lib/cmake/Qt5 \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_DIR }} \
+            -DCMAKE_PREFIX_PATH=${QT_ROOT} \
+            -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{ matrix.ANDROID_ABI }} \
+            -DANDROID_PLATFORM=${{ matrix.ANDROID_PLATFORM }} \
+            -G "Ninja"
+          cmake --build . --target install
+        fi
+
+    - name: Build RabbitIm
+      env:
+        RabbitCommon_DIR: ${{ env.SOURCE_DIR }}/RabbitCommon
+        QT_ROOT: ${{ env.Qt5_Dir }}
+        STOREPASS: ${{ secrets.STOREPASS }}
+      run: |
+        mkdir -p ${{ github.workspace }}/build && cd ${{ github.workspace }}/build
+        cmake ${{ github.workspace }} \
+          -DCMAKE_BUILD_TYPE=${{ matrix.BUILD_TYPE }} \
+          -DQT_DIR=${QT_ROOT}/lib/cmake/Qt5 \
+          -DLog4Qt_DIR=${{ env.INSTALL_DIR }}/lib/cmake/Log4Qt \
+          -DQXmpp_DIR=${{ env.INSTALL_DIR }}/lib/cmake/qxmpp \
+          -DQZXing_DIR=${{ env.INSTALL_DIR }}/lib/cmake/QZXing \
+          -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_DIR }} \
+          -DCMAKE_PREFIX_PATH=${QT_ROOT} \
+          -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
+          -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI=${{ matrix.ANDROID_ABI }} \
+          -DANDROID_PLATFORM=${{ matrix.ANDROID_PLATFORM }} \
+          -G "Ninja"
+        cmake --build . --target install-runtime
+        cmake --build . --target APK
+
+    - name: Package APK
+      if: ${{ matrix.BUILD_TYPE == 'Release' }}
+      working-directory: ${{ env.INSTALL_DIR }}
+      run: |
+        APK_FILE=$(find . -name "install-release-signed.apk")
+        APK_NAME=RabbitIm_${{ matrix.ANDROID_ABI }}_${{ env.RabbitIm_VERSION }}.apk
+        mv "$APK_FILE" "$APK_NAME"
+        cp ${{ github.workspace }}/Update/update_android.xml .
+        MD5=$(md5sum "$APK_NAME" | awk '{print $1}')
+        sed -i "s|<VERSION>.*<|<VERSION>${{ env.RabbitIm_VERSION }}<|" update_android.xml
+        sed -i "s|<INFO>.*<|<INFO>Release RabbitIm ${{ env.RabbitIm_VERSION }}<|" update_android.xml
+        sed -i "s|<TIME>.*<|<TIME>$(date)<|" update_android.xml
+        sed -i "s|<ARCHITECTURE>.*<|<ARCHITECTURE>${{ matrix.ANDROID_ABI }}<|" update_android.xml
+        sed -i "s|<MD5SUM>.*<|<MD5SUM>$MD5<|" update_android.xml
+        sed -i "s|<URL>.*<|<URL>https://github.com/KangLin/RabbitIm/releases/download/${{ env.RabbitIm_VERSION }}/${APK_NAME}<|" update_android.xml
+
+    - name: Upload APK
+      if: ${{ matrix.BUILD_TYPE == 'Release' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: rabbitim_android_${{ matrix.ANDROID_ABI }}_${{ env.RabbitIm_VERSION }}
+        path: ${{ env.INSTALL_DIR }}/RabbitIm_${{ matrix.ANDROID_ABI }}_${{ env.RabbitIm_VERSION }}.apk
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Build Jekyll site
+      uses: actions/jekyll-build-pages@v1
+      with:
+        source: ./
+        destination: ./_site
+
+    - name: Upload GitHub Pages artifact
+      uses: actions/upload-pages-artifact@v3
+
+    - name: Deploy to GitHub Pages
+      uses: actions/deploy-pages@v4
